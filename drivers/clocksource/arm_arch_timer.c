@@ -175,13 +175,13 @@ static struct clocksource clocksource_counter = {
 	.name	= "arch_sys_counter",
 	.rating	= 400,
 	.read	= arch_counter_read,
-	.mask	= CLOCKSOURCE_MASK(56),
+	.mask	= CLOCKSOURCE_MASK(ARCH_TIMER_NBITS),
 	.flags	= CLOCK_SOURCE_IS_CONTINUOUS,
 };
 
 static struct cyclecounter cyclecounter __ro_after_init = {
 	.read	= arch_counter_read_cc,
-	.mask	= CLOCKSOURCE_MASK(56),
+	.mask	= CLOCKSOURCE_MASK(ARCH_TIMER_NBITS),
 };
 
 struct ate_acpi_oem_info {
@@ -963,8 +963,8 @@ static void __init arch_counter_register(unsigned type)
 	timecounter_init(&arch_timer_kvm_info.timecounter,
 			 &cyclecounter, start_count);
 
-	/* 56 bits minimum, so we assume worst case rollover */
-	sched_clock_register(arch_timer_read_counter, 56, arch_timer_rate);
+	sched_clock_register(arch_timer_read_counter, ARCH_TIMER_NBITS,
+			     arch_timer_rate);
 }
 
 static void arch_timer_stop(struct clock_event_device *clk)

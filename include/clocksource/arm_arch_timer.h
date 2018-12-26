@@ -71,6 +71,9 @@ enum arch_timer_spi_nr {
 #define ARCH_TIMER_EVT_STREAM_FREQ				\
 	(USEC_PER_SEC / ARCH_TIMER_EVT_STREAM_PERIOD_US)
 
+/* 56 bits minimum, so we assume worst case rollover */
+#define	ARCH_TIMER_NBITS		56
+
 struct arch_timer_kvm_info {
 	struct timecounter timecounter;
 	int virtual_irq;
