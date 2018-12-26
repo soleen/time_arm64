@@ -69,8 +69,7 @@ x_tmp		.req	x8
 	mrs	x_tmp, cntvct_el0
 	/* Calculate cycle delta and convert to ns. */
 	sub	\res, x_tmp, \cycle_last
-	/* We can only guarantee 56 bits of precision. */
-	movn	x_tmp, #0xff00, lsl #48
+	mov     x_tmp, #CLOCKSOURCE_MASK
 	and	\res, x_tmp, \res
 	mul	\res, \res, \mult
 	.endm
