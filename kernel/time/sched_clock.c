@@ -91,7 +91,7 @@ static inline u64 notrace cyc_to_ns(u64 cyc, u32 mult, u32 shift)
 	return (cyc * mult) >> shift;
 }
 
-unsigned long long notrace sched_clock(void)
+static inline unsigned long long sched_clock_raw(void)
 {
 	u64 cyc, res;
 	unsigned long seq;
@@ -107,6 +107,45 @@ unsigned long long notrace sched_clock(void)
 	} while (read_seqcount_retry(&cd.seq, seq));
 
 	return res;
+}
+
+/* Reasonable maximum value between time stamps, 1 hour in nsec */
+#define UNSTABLE_DELTA	(3600ull * NSEC_PER_SEC)
+
+DEFINE_STATIC_KEY_TRUE(sched_unstable_clock);
+
+/*
+ * Unstable clock, used early in boot, make sure we do not go backward, make
+ * sure we do not jump ahead insane amount of time.
+ */
+unsigned long long __init notrace sched_clock_unstable(void)
+{
+	static u64 old_clock_static;
+	u64 new_clock, old_clock, ndelta, odelta;
+
+again:
+	new_clock = sched_clock_raw();
+	old_clock = READ_ONCE(old_clock_static);
+	ndelta = new_clock + UNSTABLE_DELTA;
+	odelta = old_clock + UNSTABLE_DELTA;
+
+	/* Check overflow, monotonicity, and delta */
+	if (ndelta < new_clock || new_clock < old_clock || new_clock > odelta)
+		return old_clock;
+
+	 /* update the old_clock value */
+	if (cmpxchg64(&old_clock_static, old_clock, new_clock) != old_clock)
+		goto again;
+
+	return new_clock;
+}
+
+unsigned long long __ref notrace sched_clock(void)
+{
+	if (static_branch_unlikely(&sched_unstable_clock))
+		return sched_clock_unstable();
+	else
+		return sched_clock_raw();
 }
 
 /*
@@ -165,7 +204,7 @@ static enum hrtimer_restart sched_clock_poll(struct hrtimer *hrt)
 void __init
 sched_clock_register(u64 (*read)(void), int bits, unsigned long rate)
 {
-	u64 res, wrap, new_mask, new_epoch, cyc, ns;
+	u64 res, wrap, new_mask, new_epoch, ns;
 	u32 new_mult, new_shift;
 	unsigned long r;
 	char r_unit;
@@ -190,8 +229,7 @@ sched_clock_register(u64 (*read)(void), int bits, unsigned long rate)
 
 	/* Update epoch for new counter and update 'epoch_ns' from old counter*/
 	new_epoch = read();
-	cyc = cd.actual_read_sched_clock();
-	ns = rd.epoch_ns + cyc_to_ns((cyc - rd.epoch_cyc) & rd.sched_clock_mask, rd.mult, rd.shift);
+	ns = sched_clock();
 	cd.actual_read_sched_clock = read;
 
 	rd.read_sched_clock	= read;
@@ -252,6 +290,8 @@ void __init generic_sched_clock_init(void)
 	hrtimer_init(&sched_clock_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	sched_clock_timer.function = sched_clock_poll;
 	hrtimer_start(&sched_clock_timer, cd.wrap_kt, HRTIMER_MODE_REL);
+	/* stable clock, no need to do extra work in sched_clock() anymore */
+	static_branch_disable(&sched_unstable_clock);
 }
 
 /*
